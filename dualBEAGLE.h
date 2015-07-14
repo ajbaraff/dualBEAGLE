@@ -28,26 +28,10 @@ struct tree
   int num_level, *num_node, *num_allele;
 };
 
-struct queue_node
-{
-  void *node;
-  struct queue_node *next;
-};
-
-struct queue
-{
-  struct queue_node *front;
-  struct queue_node *rear;
-};
-
 struct tree *read_input(char*);
 struct tree_node *new_node(int, int, int);
 void add_edge(struct tree_node*, struct tree_node*, int, int);
 void free_node(struct tree_node*);
-struct queue *new_queue(void);
-int empty(struct queue*);
-void enqueue(struct queue*, void*);
-void *dequeue(struct queue*);
 void prep_tree(struct tree*, struct tree*);
 void print_tree(char*, struct tree*, int);
 void calc_tree(struct tree*, struct tree*);
