@@ -159,6 +159,8 @@ void add_edge(struct tree_node *parent, struct tree_node *child, int allele, int
   child->parent[child->num_parent-1] = parent;
 }
 
+void free_node(struct tree_node *node)
+
 struct queue *new_queue(void)
 {
   struct queue *new = malloc(sizeof(struct queue));
@@ -444,3 +446,4 @@ void sim_tree(char* filename, struct tree* tree, int n, int seed)
   fclose(outfile);
   free(node_list);
 }
+
