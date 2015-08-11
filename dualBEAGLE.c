@@ -1,10 +1,10 @@
 #include "dualBEAGLE.h"
 
-struct tree *read_input(char *filename)
+struct tree *build_tree(char *filename)
 {
   FILE *infile;
-  char line[MAX_LINE];
-  int i, j, k, l, curr_level, prev_level, curr_parent, curr_child, curr_allele, curr_count, max_child, max_allele, num_level = START_SIZE, *num_node, *num_allele;
+  char line[MAX_LINE], *line_ptr;
+  int i, j, k, l, curr_level, curr_index, curr_allele, max_allele, num_samp, num_level = START_SIZE, *num_node, *num_allele, *node_list;
   struct tree_node *curr_node, ***level;
   struct tree *ret;
 
@@ -15,59 +15,107 @@ struct tree *read_input(char *filename)
     return NULL;
   }
 
-  /* skip opening lines */
+  /* reads opening line and calculates sample size */
   fgets(line, MAX_LINE, infile);
-  fgets(line, MAX_LINE, infile);
+  num_samp = 0;
+  line_ptr = line;
+  sscanf(line_ptr, "%*s %*s %n", &n);
+  line_ptr += n;
+  while(sscanf(line_ptr, "%*s %n", &n) == 1) {
+    num_samp++;
+    line_ptr += n;
+  }
 
   /* read input to find number and size of levels */
-  num_node = malloc(num_level*sizeof(int));
-  num_node[0] = 1;
   num_allele = malloc(num_level*sizeof(int));
-  num_allele[0] = 0;
-  prev_level = max_child = max_allele = 0;
+  curr_level = max_allele = 0;
   while(fgets(line, MAX_LINE, infile) != NULL) {
     if(line[0] != '\n') {
-      sscanf(line, "%d %*s %*d %d %d", &curr_level, &curr_child, &curr_allele);
-      if(curr_level == prev_level) {
-        if(curr_child+1 > max_child) max_child = curr_child+1;
-	if(curr_allele > max_allele) max_allele = curr_allele; 
+      line_ptr = line;
+      sscanf(line_ptr, "%*s %*s %n", &n);
+      line_ptr += n;
+      
+      while(sscanf(line_ptr, "%d %n", &curr_allele, &n) == 1) {
+	if(curr_allele > max_allele) max_allele = curr_allele;
+ 	line_ptr += n;
       }
-      else {
-        if(curr_level == num_level) {
-          num_level *= 2;
-          num_node = realloc(num_node, num_level*sizeof(int));
-	  num_allele = realloc(num_allele, num_level*sizeof(int));
-        }
-        num_node[curr_level] = max_child;
-	num_allele[curr_level] = max_allele;
-        max_child = curr_child+1; 
-	max_allele = curr_allele;
+
+      num_allele[curr_level] = max_allele;
+      max_allele = 0;
+
+      curr_level++;
+      if(curr_level == num_level) {
+        num_level *= 2;
+        num_allele = realloc(num_allele, num_level*sizeof(int));
       }
-      prev_level = curr_level;
     }
   }
-  num_level = curr_level+2;
-  num_node = realloc(num_node, num_level*sizeof(int));
-  num_node[num_level-1] = 1;
+  num_level = curr_level+1;
   num_allele = realloc(num_allele, num_level*sizeof(int));
   num_allele[num_level-1] = 0;
 
-  /* build new nodes for each level */
-  level = malloc(num_level*sizeof(struct tree_node**));
-  for(i = 0; i < num_level; i++) {
-    level[i] = malloc(num_node[i]*sizeof(struct tree_node*));
-    for(j = 0; j < num_node[i]; j++)
-      level[i][j] = new_node(i, j, num_allele[i]);
-  }
-
-  /* read input to add edges */
   rewind(infile);
   fgets(line, MAX_LINE, infile);
-  fgets(line, MAX_LINE, infile);
+  level = malloc(num_level*sizeof(struct tree_node**));
+  level[0] = malloc(sizeof(struct tree_node*));
+  level[0][0] = new_node(0, 0, num_allele[0]);
+  num_node = calloc(num_level, sizeof(int));
+  num_node[0] = 1;
+  node_list = calloc(num_samp, sizeof(int));
+  curr_level = 0;
   while(fgets(line, MAX_LINE, infile) != NULL) {
     if(line[0] != '\n') {
-      sscanf(line, "%d %*s %d %d %d %d", &curr_level, &curr_parent, &curr_child, &curr_allele, &curr_count);
-      add_edge(level[curr_level][curr_parent], level[curr_level+1][curr_child], curr_allele, curr_count);
+      line_ptr = line;
+      sscanf(line_ptr, "%*s %*s %n", &n);
+      line_ptr += n;
+ 
+      if(curr_level+1 < num_level-1) {
+	level[curr_level+1] = malloc(num_allele[curr_level]*num_node[curr_level]*sizeof(struct tree_node*));
+	curr_index = 0;
+	while(sscanf(line_ptr, "%d %n", &curr_allele, &n) == 1) {
+	  curr_node <- level[curr_level][node_list[curr_index]];
+	  if(curr_node->allele_miss[curr_allele-1]) {
+	    level[curr_level+1][num_node[curr_level+1]] = new_node(curr_level+1, num_node[curr_level+1], num_allele[curr_level+1]);
+	    add_edge(curr_node, level[curr_level+1][num_node[curr_level+1]], curr_allele, 1);
+	    node_list[curr_index] = num_node[curr_level+1];
+	    num_node[curr_level+1]++;
+	  }
+	  else {
+	    curr_node->count++;
+	    for(k = 0; k < curr_node->num_child && curr_node->allele_child[k] != curr_allele; k++);
+	    curr_node->count_child[k]++;
+	    node_list[curr_index] = curr_node->child[k]->id;
+	  }
+	  curr_index++;
+	  line_ptr += n;
+	}
+      }
+
+      else {
+	level[curr_level+1] = malloc(sizeof(struct tree_node*));
+	level[curr_level+1][0] = new_node(curr_level+1, 0, num_allele[curr_level+1]);
+	num_node[curr_level+1] = 1;
+        curr_index = 0;
+        while(sscanf(line_ptr, "%d %n", &curr_allele, &n) == 1) {
+          curr_node <- level[curr_level][node_list[curr_index]];
+          if(curr_node->allele_miss[curr_allele-1]) add_edge(curr_node, level[curr_level+1][0], curr_allele, 1);
+	  else {
+            curr_node->count++;
+            for(k = 0; k < curr_node->num_child && curr_node->allele_child[k] != curr_allele; k++);
+            curr_node->count_child[k]++;
+          }
+          curr_index++;
+          line_ptr += n;
+        }
+      }
+
+      level[curr_level+1] = realloc(level[curr_level+1], num_node[curr_level+1]*sizeof(struct tree_node*));
+
+      curr_level++;
+      if(curr_level == num_level) {
+        num_level *= 2;
+        num_allele = realloc(num_allele, num_level*sizeof(int));
+      }
     }
   }
 
@@ -76,22 +124,12 @@ struct tree *read_input(char *filename)
     for(j = 0; j < num_node[i]; j++) {
       curr_node = level[i][j];
       for(k = 0; k < num_allele[i]; k++)
-	if(curr_node->allele_miss[k]) 
-	  add_edge(level[i][j], level[i][j]->child[0], k+1, 0);
+        if(curr_node->allele_miss[k])
+          for(l = 0; l < num_node[i+1]; l++)
+            add_edge(level[i][j], level[i+1][l], k+1, 0, 0);
     }
   }
-  
-  /* for(i = 0; i < num_level; i++) {
-    for(j = 0; j < num_node[i]; j++) {
-      curr_node = level[i][j];
-      for(k = 0; k < num_allele[i]; k++)
-        if(curr_node->allele_miss[k]) {
-	  add_edge(level[i][j], level[i+1][0], k+1, 0, 1);
-	  curr_node->allele_miss[k] = 0;
-	}
-    }
-    } */
-  
+
   /* calculate initial edge weights */
   for(i = 0; i < num_level; i++) {
     for(j = 0; j < num_node[i]; j++) {
@@ -113,6 +151,47 @@ struct tree *read_input(char *filename)
   ret->num_allele = num_allele;
 
   return(ret);
+}
+
+char *reverse_input(char *filename) 
+{
+  FILE *infile, *outfile;
+  char line[MAX_LINE];
+  int i, j, num_line = 0;
+
+  infile = fopen(filename, "r");
+  if(infile == NULL) {
+    printf("Error: could not open file \"%s\".\n", filename);
+    return 1;
+  }
+
+  /* open the output file */
+  filename = strcat(filename, ".rev");
+  outfile = fopen(filename, "w");
+  if(outfile == NULL) {
+    printf("Error: could not open file \"%s\".\n", filename);
+    return 1;
+  }
+
+  /* copy opening line */
+  fgets(line, MAX_LINE, infile);
+  fprintf(outfile, "%s", line);
+
+  while(fgets(line, MAX_LINE, infile) != NULL) num_line++;
+  rewind(infile);
+
+  for(i = 0; i < num_line; i++) {
+    fgets(line, MAX_LINE, infile);
+    for(j = 0; j < num_line-i; j++)
+      fgets(line, MAX_LINE, infile);
+    fprintf(outfile, "%s", line);
+    rewind(infile);
+  }
+
+  fclose(infile);
+  fclose(outfile);
+
+  return(filename);
 }
 
 struct tree_node *new_node(int level, int id, int num_allele)

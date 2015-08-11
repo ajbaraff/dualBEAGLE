@@ -17,7 +17,7 @@ struct haplotype
 struct tree_node
 {
   int level, id, count, num_parent, num_child, num_haplo, marked, *count_child, *allele_parent, *allele_child, *allele_miss, *child_id, *parent_id;
-  double p_node, *p_parent, *p_child, *back_weight;
+  double p_node, *p_parent, *p_child, *forw_weight, *back_weight;
   struct haplotype **haplo;
   struct tree_node **parent, **child;
 };
@@ -29,6 +29,7 @@ struct tree
 };
 
 struct tree *read_input(char*);
+char *reverse_input(char*);
 struct tree_node *new_node(int, int, int);
 void add_edge(struct tree_node*, struct tree_node*, int, int);
 void free_node(struct tree_node*);
