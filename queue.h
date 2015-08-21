@@ -16,6 +16,7 @@ struct queue
 };
 
 struct queue *new_queue(void);
+void free_queue(struct queue*);
 void enqueue(struct queue*, void*);
 void *dequeue(struct queue*);
 int empty(struct queue*);

@@ -8,6 +8,12 @@ struct queue *new_queue(void)
   return new;
 }
 
+void free_queue(struct queue *queue)
+{
+  while(!empty(queue)) dequeue(queue);
+  free(queue);
+}
+
 void enqueue(struct queue *queue, void *node)
 {
   struct queue_node *new = malloc(sizeof(struct queue_node));
