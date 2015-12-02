@@ -9,8 +9,9 @@
 #define MAX_LINE 65536
 #define MAX_ENTRY 64
 #define START_SIZE 16
-#define TOL 0.00000001
-#define OFFSET 0.1
+#define TOL 0.00001
+#define OFFSET 0.0001
+#define MAX_NODE 200
 
 struct haplotype
 {
@@ -30,9 +31,11 @@ struct tree
 {
   struct tree_node ***node;
   int num_level, *num_node, *num_allele;
+  double loss, loss_test;
 };
 
 struct tree *read_input(char*);
+struct tree *read_bgl(char*);
 char *reverse_input(char*);
 void split_input(char*, int, int);
 struct tree_node *new_node(int, int, int);
@@ -42,13 +45,12 @@ void free_node(struct tree_node*);
 struct tree *copy_tree(struct tree*);
 struct tree_node *copy_node(struct tree_node*);
 void print_tree(char*, struct tree*, int);
-void *merge_test(struct tree*, struct tree_node*, struct tree_node*);
-struct tree_node *merge_node(struct tree*, struct tree_node*, struct tree_node*, int);
-double loglik(struct tree*);
-double loglik_pen(struct tree*, double, int);
-struct tree *merge_tree(struct tree*, int, double);
+double loss(struct tree*, double);
+double merge_test(struct tree*, struct tree_node*, struct tree_node*, double, int);
+struct tree_node *merge_node(struct tree*, struct tree_node*, struct tree_node*, double, int);
+struct tree *merge_tree(struct tree*, double);
 void print_view(char*, struct tree*);
-double test_BIC(char*, struct tree*);
+double test_loss(char*, struct tree*);
 void calc_tree(struct tree*, struct tree*);
 
 
