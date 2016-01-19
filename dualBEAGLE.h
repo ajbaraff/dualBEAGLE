@@ -46,7 +46,7 @@ struct tree *copy_tree(struct tree*);
 struct tree_node *copy_node(struct tree_node*);
 void print_tree(char*, struct tree*, int);
 double loss(struct tree*, double);
-double merge_test(struct tree*, struct tree_node*, struct tree_node*, double, int);
+double merge_test(struct tree*, struct tree_node*, struct tree_node*, double, double, int);
 struct tree_node *merge_node(struct tree*, struct tree_node*, struct tree_node*, double, int);
 struct tree *merge_tree(struct tree*, double);
 void print_view(char*, struct tree*);
@@ -58,5 +58,6 @@ void prep_tree(struct tree*, struct tree*);
 int calc_freq(struct haplotype***, struct tree*, int, int, int);
 int compare(const void*, const void*);
 void sim_tree(char*, struct tree*, int, int);
+
 
 #endif // dualBEAGLE_H_
