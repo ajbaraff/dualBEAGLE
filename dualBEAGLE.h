@@ -22,7 +22,7 @@ struct haplotype
 struct tree_node
 {
   int level, id, count, num_allele, num_back, num_haplo, marked, *count_child, *allele_miss;
-  double p_node, *p_child, *p_child_test, *back_weight;
+  double p_node, count_test, *p_child, *p_child_test, *count_test_child, *back_weight;
   struct haplotype **haplo;
   struct tree_node **child;
 };
@@ -30,7 +30,7 @@ struct tree_node
 struct tree
 {
   struct tree_node ***node;
-  int num_level, *num_node, *num_allele;
+  int num_level, start, length, *num_node, *num_allele;
   double loss, loss_test;
 };
 
@@ -44,15 +44,18 @@ void free_tree(struct tree*);
 void free_node(struct tree_node*);
 struct tree *copy_tree(struct tree*);
 struct tree_node *copy_node(struct tree_node*);
+struct tree *cut_tree(struct tree*, int, int, int);
+void calc_test(struct tree*, struct tree*);
+void read_test(char*, struct tree*, int, int, int, int);
 void print_tree(char*, struct tree*, int);
 double loss(struct tree*, double);
+double test_loss(struct tree*);
 double merge_test(struct tree*, struct tree_node*, struct tree_node*, double, double, int);
 struct tree_node *merge_node(struct tree*, struct tree_node*, struct tree_node*, double, int);
-struct tree *merge_tree(struct tree*, double);
+struct tree *merge_tree(struct tree*, double, int, int, int);
 void print_view(char*, struct tree*);
-double test_loss(char*, struct tree*);
 void calc_tree(struct tree*, struct tree*);
-
+void print_haplo(char*, struct haplotype**, int);
 
 void prep_tree(struct tree*, struct tree*);
 int calc_freq(struct haplotype***, struct tree*, int, int, int);
