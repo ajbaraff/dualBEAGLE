@@ -10,8 +10,8 @@
 #define MAX_ENTRY 64
 #define START_SIZE 16
 #define TOL 0.00001
-#define OFFSET 0.0001
-#define MAX_NODE 200
+#define OFFSET 0.0000
+#define MAX_NODE 250
 
 struct haplotype
 {
@@ -38,6 +38,7 @@ struct tree *read_input(char*);
 struct tree *read_bgl(char*);
 char *reverse_input(char*);
 void split_input(char*, int, int);
+void boot_input(char*, int);
 struct tree_node *new_node(int, int, int);
 void add_edge(struct tree*, struct tree_node*, struct tree_node*, int, int);
 void free_tree(struct tree*);
@@ -47,10 +48,13 @@ struct tree_node *copy_node(struct tree_node*);
 struct tree *cut_tree(struct tree*, int, int, int);
 void calc_test(struct tree*, struct tree*);
 void read_test(char*, struct tree*, int, int, int, int);
+void prep_boot(char*, struct tree*, int, int, int, int);
 void print_tree(char*, struct tree*, int);
 double loss(struct tree*, double);
+double aic(struct tree*);
+double bic(struct tree*);
 double test_loss(struct tree*);
-double merge_test(struct tree*, struct tree_node*, struct tree_node*, double, double, int);
+double merge_test(struct tree_node*, struct tree_node*, double, double, double);
 struct tree_node *merge_node(struct tree*, struct tree_node*, struct tree_node*, double, int);
 struct tree *merge_tree(struct tree*, double, int, int, int);
 void print_view(char*, struct tree*);
@@ -61,6 +65,5 @@ void prep_tree(struct tree*, struct tree*);
 int calc_freq(struct haplotype***, struct tree*, int, int, int);
 int compare(const void*, const void*);
 void sim_tree(char*, struct tree*, int, int);
-
 
 #endif // dualBEAGLE_H_

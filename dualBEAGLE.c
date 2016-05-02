@@ -4,8 +4,8 @@ struct tree *read_input(char *filename)
 {
   FILE *infile;
   char line[MAX_LINE], *line_ptr;
-  int i, j, k, n, curr_level, curr_index, curr_allele, max_allele, num_samp, num_level = START_SIZE, *num_node, *num_allele, *node_list;
-  double curr_p_sum, new_p_sum, p_temp;
+  int i, j, k, k_max, n, curr_level, curr_index, curr_allele, max_allele, num_samp, num_level = START_SIZE, *num_node, *num_allele, *node_list;
+  double curr_p_sum, new_p_sum, p_temp, p_max;
   struct tree_node *curr_node, ***node;
   struct tree *tree;
 
@@ -152,6 +152,23 @@ struct tree *read_input(char *filename)
     curr_p_sum = new_p_sum;
   }
 
+  /* add missing parallel edges */
+  for(i = 0; i < tree->num_level; i++)
+    for(j = 0; j < tree->num_node[i]; j++) {
+      curr_node = tree->node[i][j];
+      p_max = 0;
+      k_max = -1;
+      for(k = 0; k < curr_node->num_allele; k++)
+	if(curr_node->p_child[k] > p_max) {
+	  p_max = curr_node->p_child[k];
+	  k_max = k;
+	}
+      if(k_max >= 0)
+	for(k = 0; k < curr_node->num_allele; k++)
+	  if(curr_node->allele_miss[k])
+	    add_edge(tree, curr_node, curr_node->child[k_max], k, 0);
+    }
+
   return(tree);
 }
 
@@ -159,8 +176,8 @@ struct tree *read_bgl(char *filename)
 {
   FILE *infile;
   char line[MAX_LINE];
-  int i, j, k, prev_level, curr_level, curr_index, next_index, max_index, curr_allele, max_allele, num_level = START_SIZE, curr_count, *num_node, *num_allele;
-  double curr_p_sum, new_p_sum, p_temp;
+  int i, j, k, k_max, prev_level, curr_level, curr_index, next_index, max_index, curr_allele, max_allele, num_level = START_SIZE, curr_count, *num_node, *num_allele;
+  double curr_p_sum, new_p_sum, p_temp, p_max;
   struct tree_node *curr_node, ***node;
   struct tree *tree;
 
@@ -264,6 +281,23 @@ struct tree *read_bgl(char *filename)
     curr_p_sum = new_p_sum;
   }
 
+  /* add missing parallel edges */
+  for(i = 0; i < tree->num_level; i++)
+    for(j = 0; j < tree->num_node[i]; j++) {
+      curr_node = tree->node[i][j];
+      p_max = 0;
+      k_max = -1;
+      for(k = 0; k < curr_node->num_allele; k++)
+        if(curr_node->p_child[k] > p_max) {
+          p_max = curr_node->p_child[k];
+          k_max = k;
+        }
+      if(k_max >= 0)
+        for(k = 0; k < curr_node->num_allele; k++)
+          if(curr_node->allele_miss[k])
+            add_edge(tree, curr_node, curr_node->child[k_max], k, 0);
+    }
+
   return(tree);
 }
 
@@ -344,7 +378,7 @@ void split_input(char *filename, int num_split, int seed)
   selected = calloc(num_samp, sizeof(int));
   srand(seed);
   while (n < num_split) {
-    rand_u = (double)rand() / (double)RAND_MAX;
+    rand_u = (double)rand() / ((double)RAND_MAX + 1);
     if((num_samp-i)*rand_u >= num_split-n)
       i++;
     else {
@@ -411,6 +445,121 @@ void split_input(char *filename, int num_split, int seed)
   fclose(infile);
   fclose(outfile1);
   fclose(outfile2);
+
+  free(selected);
+}
+
+void boot_input(char *filename, int seed)
+{
+  FILE *infile, *outfile;
+  char line[MAX_LINE], *line_ptr, *temp, init, entry[MAX_ENTRY];
+  int i, j, n, num_samp, curr_allele, *selected;
+  double rand_u;
+
+  /* open the input file */
+  infile = fopen(filename, "r");
+  if(infile == NULL) {
+    printf("Error: could not open file \"%s\".\n", filename);
+    return;
+  }
+
+  /* reads opening line and calculates sample size */
+  fgets(line, MAX_LINE, infile);
+  num_samp = 0;
+  line_ptr = line;
+  sscanf(line_ptr, "%*s %*s %n", &n);
+  line_ptr += n;
+  while(sscanf(line_ptr, "%*s %n", &n) == 0) {
+    num_samp++;
+    line_ptr += n;
+  }
+
+  selected = calloc(num_samp, sizeof(int));
+  srand(seed);
+  for(i = 0; i < num_samp; i++) {
+    rand_u = (double)rand() / ((double)RAND_MAX + 1);
+    selected[(int)(num_samp * rand_u)]++;
+  }
+
+  temp = malloc((strlen(filename)+6)*sizeof(char));
+  strcpy(temp, filename);
+  strcat(temp, ".boot");
+  outfile = fopen(temp, "w");
+  if(outfile == NULL) {
+    printf("Error: could not open file \"%s\".\n", temp);
+    return;
+  }
+  free(temp);
+
+  line_ptr = line;
+  sscanf(line_ptr, "%c %s %n", &init, entry, &n);
+  fprintf(outfile, "%c %s ", init, entry);
+  line_ptr += n;
+  i = 0;
+  while(sscanf(line_ptr, "%s %n", entry, &n) == 1) {
+    for(j = 0; j < selected[i]; j++)
+      fprintf(outfile, "%s ", entry);
+    line_ptr += n;
+    i++;
+  }
+  fprintf(outfile, "\n");
+
+  while(fgets(line, MAX_LINE, infile) != NULL) {
+    if(line[0] != '\n') {
+      line_ptr = line;
+      sscanf(line_ptr, " %c %s %n", &init, entry, &n);
+      fprintf(outfile, " %c %s ", init, entry);
+      line_ptr += n;
+      i = 0;
+      while(sscanf(line_ptr, "%d %n", &curr_allele, &n) == 1) {
+	for(j = 0; j < selected[i]; j++)
+	  fprintf(outfile, "%d ", curr_allele);
+        line_ptr += n;
+        i++;
+      }
+      fprintf(outfile, "\n");
+    }
+  }
+
+  fclose(infile);
+  fclose(outfile);
+
+  free(selected);
+}
+
+void prep_boot(char *filename, struct tree *tree, int num_level, int start, int length, int reverse) {
+  int i, j, k, n;
+  double p_temp, curr_p_sum, new_p_sum;
+  struct tree_node *curr_node;
+
+  read_test(filename, tree, num_level, start, length, reverse);
+
+  tree->node[0][0]->p_node = 1;
+  for(i = 1; i < tree->num_level; i++) 
+    for(j = 0; j < tree->num_node[i]; j++) 
+      tree->node[i][j]->p_node = 0;
+
+  /* calculate edge and node weights */
+  curr_p_sum = 1;
+  for(i = 0; i < tree->num_level; i++) {
+    new_p_sum = 0;
+    for(j = 0; j < tree->num_node[i]; j++) {
+      curr_node = tree->node[i][j];
+      curr_node->p_node /= curr_p_sum;
+      for(k = 0; k < curr_node->num_allele; k++) {
+	if(curr_node->count_test > 0)
+	  curr_node->p_child[k] = curr_node->p_child_test[k] = ((double)curr_node->count_test_child[k] + OFFSET) / ((double)curr_node->count_test + OFFSET*(double)curr_node->num_allele);
+	else
+	  curr_node->p_child[k] = 0;
+        p_temp = curr_node->p_node * curr_node->p_child[k];
+        if(!curr_node->allele_miss[k]) {
+          curr_node->child[k]->p_node += p_temp;
+          new_p_sum += p_temp;
+        }
+      }
+    }
+    curr_p_sum = new_p_sum;
+  }
 }
 
 struct tree_node *new_node(int level, int id, int num_allele)
@@ -443,7 +592,8 @@ void add_edge(struct tree *tree, struct tree_node *parent, struct tree_node *chi
   parent->count += count;
   parent->count_child[allele] += count;
 
-  parent->allele_miss[allele] = 0;
+  if(count > 0)
+    parent->allele_miss[allele] = 0;
   parent->child[allele] = child;
 }
 
@@ -518,8 +668,7 @@ struct tree *copy_tree(struct tree *tree)
     for(j = 0; j < tree->num_node[i]; j++) {
       curr_node = new->node[i][j];
       for(k = 0; k < curr_node->num_allele; k++)
-	if(!curr_node->allele_miss[k]) 
-	  curr_node->child[k] = new->node[i+1][tree->node[i][j]->child[k]->id];
+	curr_node->child[k] = new->node[i+1][tree->node[i][j]->child[k]->id];
     }
 
   return(new);
@@ -604,8 +753,7 @@ struct tree *cut_tree(struct tree *tree, int start, int length, int reverse)
     for(j = 0; j < new->num_node[i]; j++) {
       curr_node = new->node[i][j];
       for(k = 0; k < curr_node->num_allele; k++) 
-        if(!curr_node->allele_miss[k])
-          curr_node->child[k] = new->node[i+1][tree->node[i+start-1][j]->child[k]->id];
+	curr_node->child[k] = new->node[i+1][tree->node[i+start-1][j]->child[k]->id];
     }
 
   while(new->num_node[0] > 1) 
@@ -618,8 +766,7 @@ struct tree *cut_tree(struct tree *tree, int start, int length, int reverse)
 
 void calc_test(struct tree *train, struct tree *test)
 {
-  int i, j, k, l, m;
-  double **node_list, **next_list;
+  int i, j, k, *node_list, *next_list;
   struct tree_node *curr_node;
 
   if(train->node[0][0]->count_test > 0)
@@ -631,36 +778,25 @@ void calc_test(struct tree *train, struct tree *test)
 	  curr_node->count_test_child[k] = 0;
       }
   
-  node_list = malloc(sizeof(double*));
-  node_list[0] = malloc(sizeof(double));
-  node_list[0][0] = 1;
+  node_list = malloc(sizeof(int));
+  node_list[0] = 0;
 
   for(i = 0; i < test->num_level-1; i++) {
-    next_list = malloc(test->num_node[i+1]*sizeof(double*));
-    for(j = 0; j < test->num_node[i+1]; j++)
-      next_list[j] = calloc(train->num_node[i+1], sizeof(double));
+    next_list = malloc(test->num_node[i+1]*sizeof(int));
     for(j = 0; j < test->num_node[i]; j++) {
       curr_node = test->node[i][j];
-      for(k = 0; k < train->num_node[i]; k++) {
-	train->node[i][k]->count_test += node_list[j][k] * curr_node->count;
-	for(l = 0; l < curr_node->num_allele; l++)
-	  if(!curr_node->allele_miss[l]) {
-	    train->node[i][k]->count_test_child[l] += node_list[j][k] * curr_node->count_child[l];
-	    if(train->node[i][k]->allele_miss[l])
-	      for(m = 0; m < train->num_node[i+1]; m++)
-		next_list[curr_node->child[l]->id][m] += node_list[j][k] * train->node[i+1][m]->p_node;
-	    else
-	      next_list[curr_node->child[l]->id][train->node[i][k]->child[l]->id] += node_list[j][k];
-	  }
-      }
-      free(node_list[j]);
+      train->node[i][node_list[j]]->count_test += curr_node->count;
+      for(k = 0; k < curr_node->num_allele; k++)
+	if(!curr_node->allele_miss[k]) {
+	  train->node[i][node_list[j]]->count_test_child[k] += curr_node->count_child[k];
+	  next_list[curr_node->child[k]->id] = train->node[i][node_list[j]]->child[k]->id;
+	}
     }
     free(node_list);
     node_list = next_list;
   }
   train->node[test->num_level-1][0]->count_test += test->node[test->num_level-1][0]->count;
 
-  free(node_list[0]);
   free(node_list);
 }
 
@@ -668,11 +804,20 @@ void read_test(char *filename, struct tree *tree, int num_level, int start, int 
 {
   FILE *infile;
   char line[MAX_LINE], *line_ptr;
-  int i, j, n, curr_level, curr_allele, curr_samp, num_samp;
+  int i, j, k, n, curr_level, curr_allele, curr_samp, num_samp;
   double *temp, **node_list;
   struct tree_node *curr_node;
 
   if(reverse) start = num_level - start - length + 1;
+
+  if(tree->node[0][0]->count_test > 0)
+    for(i = 0; i < tree->num_level; i++)
+      for(j = 0; j < tree->num_node[i]; j++) {
+        curr_node = tree->node[i][j];
+        curr_node->count_test = 0;
+        for(k = 0; k < curr_node->num_allele; k++)
+          curr_node->count_test_child[k] = 0;
+      }
 
   // open the input file 
   infile = fopen(filename, "r");
@@ -714,11 +859,95 @@ void read_test(char *filename, struct tree *tree, int num_level, int start, int 
 	  for(i = 0; i < tree->num_node[curr_level]; i++) {
 	    curr_node = tree->node[curr_level][i];
 	    curr_node->count_test_child[curr_allele] += node_list[curr_samp][i];
-	    if(curr_node->allele_miss[curr_allele])
+	    /*if(curr_node->allele_miss[curr_allele])
 	      for(j = 0; j < tree->num_node[curr_level+1]; j++)
 		temp[j] += node_list[curr_samp][i] * tree->node[curr_level+1][j]->p_node;
 	    else
-	      temp[curr_node->child[curr_allele]->id] += node_list[curr_samp][i];
+	    temp[curr_node->child[curr_allele]->id] += node_list[curr_samp][i]; */
+	    temp[curr_node->child[curr_allele]->id] += node_list[curr_samp][i];
+	  }
+	  for(i = 0; i < tree->num_node[curr_level+1]; i++)
+	    tree->node[curr_level+1][i]->count_test += temp[i];
+	  free(node_list[curr_samp]);
+	  node_list[curr_samp] = temp;
+	  curr_samp++;
+	  line_ptr += n;
+	}
+      }
+      curr_level++;
+    }
+  }
+
+  fclose(infile);
+}
+
+/*
+void read_test(char *filename, struct tree *tree, int num_level, int start, int length, int reverse)
+{
+  FILE *infile;
+  char line[MAX_LINE], *line_ptr;
+  int i, j, k, n, curr_level, curr_allele, curr_samp, num_samp;
+  double *temp, **node_list;
+  struct tree_node *curr_node;
+
+  if(reverse) start = num_level - start - length + 1;
+
+  if(tree->node[0][0]->count_test > 0)
+    for(i = 0; i < tree->num_level; i++)
+      for(j = 0; j < tree->num_node[i]; j++) {
+        curr_node = tree->node[i][j];
+        curr_node->count_test = 0;
+        for(k = 0; k < curr_node->num_allele; k++)
+          curr_node->count_test_child[k] = 0;
+      }
+
+  // open the input file 
+  infile = fopen(filename, "r");
+  if(infile == NULL) {
+    printf("Error: could not open file \"%s\".\n", filename);
+    return;
+  }
+
+  // reads opening line and calculates sample size 
+  fgets(line, MAX_LINE, infile);
+  num_samp = 0;
+  line_ptr = line;
+  sscanf(line_ptr, "%*s %*s %n", &n);
+  line_ptr += n;
+  while(sscanf(line_ptr, "%*s %n", &n) == 0) {
+    num_samp++;
+    line_ptr += n;
+  }
+  tree->node[0][0]->count_test = num_samp;
+
+  // read input to calculate BIC 
+  curr_level = 1 - start;
+  node_list = malloc(num_samp*sizeof(double*));
+  for(curr_samp = 0; curr_samp < num_samp; curr_samp++) {
+    node_list[curr_samp] = malloc(sizeof(double));
+    node_list[curr_samp][0] = 1;
+  }
+  while(fgets(line, MAX_LINE, infile) != NULL && curr_level < length) {
+    if(line[0] != '\n') {
+      if(curr_level >= 0) {
+	printf("curr_level = %d\n", curr_level);
+	line_ptr = line;
+	sscanf(line_ptr, "%*s %*s %n", &n);
+	line_ptr += n;
+	
+	curr_samp = 0;
+	while(sscanf(line_ptr, "%d %n", &curr_allele, &n) == 1) {
+	  curr_allele--;  // fix to allele key later
+	  temp = calloc(tree->num_node[curr_level+1], sizeof(double));
+	  for(i = 0; i < tree->num_node[curr_level]; i++) {
+	    curr_node = tree->node[curr_level][i];
+	    curr_node->count_test_child[curr_allele] += node_list[curr_samp][i];
+	    /* if(curr_node->allele_miss[curr_allele])
+	      for(j = 0; j < tree->num_node[curr_level+1]; j++)
+		temp[j] += node_list[curr_samp][i] * tree->node[curr_level+1][j]->p_node;
+	    else
+	    temp[curr_node->child[curr_allele]->id] += node_list[curr_samp][i]; 
+	    temp[curr_node->child[curr_allele]->id] += node_list[curr_samp][i];
 	  }
 	  for(i = 0; i < tree->num_node[curr_level+1]; i++)
 	    tree->node[curr_level+1][i]->count_test += temp[i];
@@ -733,7 +962,7 @@ void read_test(char *filename, struct tree *tree, int num_level, int start, int 
   }
 
   fclose(infile);
-}
+} */
 
 void print_tree(char *filename, struct tree *tree, int reverse)
 {
@@ -755,10 +984,7 @@ void print_tree(char *filename, struct tree *tree, int reverse)
       curr_node = tree->node[i][j];
       fprintf(outfile, "\tNode ID = %d, Node Weight = %8.8lf, Node Count = %d, Test Count = %8.8lf\n", curr_node->id+1, curr_node->p_node, curr_node->count, curr_node->count_test);
       for(k = 0; k < curr_node->num_allele; k++) {
-	if(curr_node->allele_miss[k])
-	  fprintf(outfile, "\t\tChild Node = %d, Child Allele = %d, Child Weight = %8.8lf, Child Count = %d. Test Count = %8.8lf\n", 0, k+1, curr_node->p_child[k], curr_node->count_child[k], curr_node->count_test_child[k]);
-	else
-	  fprintf(outfile, "\t\tChild Node = %d, Child Allele = %d, Child Weight = %8.8lf, Child Count = %d. Test Count = %8.8lf\n", curr_node->child[k]->id+1, k+1, curr_node->p_child[k], curr_node->count_child[k], curr_node->count_test_child[k]);
+	fprintf(outfile, "\t\tChild Node = %d, Child Allele = %d, Child Weight = %8.8lf, Child Count = %d. Test Count = %8.8lf\n", curr_node->child[k]->id+1, k+1, curr_node->p_child[k], curr_node->count_child[k], curr_node->count_test_child[k]);
       }
     }
   }
@@ -778,22 +1004,77 @@ double loss(struct tree *tree, double lambda)
   for(i = tree->start - 1; i < tree->start + tree->length - 1; i++) {
     for(j = 0; j < tree->num_node[i]; j++) {
       curr_node = tree->node[i][j];
-      for(k = 0; k < curr_node->num_allele; k++) 
-        if(curr_node->count_child[k] > 0)
+      for(k = 0; k < curr_node->num_allele; k++) {
+        if(curr_node->p_child[k] > 0)
           loss -= curr_node->count_child[k] * log(curr_node->p_child[k]);
+        else
+          loss -= curr_node->count_child[k] * log(1.0/(curr_node->count+1.0));
+      }
     }
     loss += lambda * tree->num_node[i] * (tree->num_allele[i]-1);
+    //loss += lambda * (tree->num_node[i] * (tree->num_node[i]-1) / 2) * (tree->num_allele[i]-1);
   }
-
+  
   tree->loss = loss;
   return loss;
+}
+
+double aic(struct tree *tree)
+{
+  int i, j, k;
+  double loss = 0;
+  struct tree_node *curr_node;
+
+  /* for(i = 0; i < tree->num_node[tree->start-1]; i++)
+     loss -= tree->node[tree->start-1][i]->count * log(tree->node[tree->start-1][i]->p_node); */
+
+  for(i = tree->start - 1; i < tree->start + tree->length - 1; i++) {
+    for(j = 0; j < tree->num_node[i]; j++) {
+      curr_node = tree->node[i][j];
+      for(k = 0; k < curr_node->num_allele; k++) {
+        if(curr_node->p_child[k] > 0)
+          loss -= curr_node->count_child[k] * log(curr_node->p_child[k]);
+        else
+          loss -= curr_node->count_child[k] * log(1.0/(curr_node->count+1.0));
+      }
+    }
+    loss += tree->num_node[i] * (tree->num_allele[i]-1);
+  }
+
+  return 2*loss;
+}
+
+double bic(struct tree *tree)
+{
+  int i, j, k;
+  double loss = 0;
+  struct tree_node *curr_node;
+
+  /* for(i = 0; i < tree->num_node[tree->start-1]; i++)
+     loss -= tree->node[tree->start-1][i]->count * log(tree->node[tree->start-1][i]->p_node); */
+
+  for(i = tree->start - 1; i < tree->start + tree->length - 1; i++) {
+    for(j = 0; j < tree->num_node[i]; j++) {
+      curr_node = tree->node[i][j];
+      for(k = 0; k < curr_node->num_allele; k++) {
+        if(curr_node->p_child[k] > 0)
+          loss -= curr_node->count_child[k] * log(curr_node->p_child[k]);
+        else
+          loss -= curr_node->count_child[k] * log(1.0/(curr_node->count+1.0));
+      }
+    }
+    loss += log(tree->node[0][0]->count)/2 * tree->num_node[i] * (tree->num_allele[i]-1);
+  }
+
+  return 2*loss;
 }
 
 double test_loss(struct tree *tree)
 {
   int i, j, k;
-  double loss = 0;
+  double loss = 0, pen = 0;
   struct tree_node *curr_node;
+  FILE *outfile;
 
   /* for(i = 0; i < tree->num_node[tree->start-1]; i++)
      loss -= tree->node[tree->start-1][i]->count_test * log(tree->node[tree->start-1][i]->p_node); */
@@ -801,21 +1082,31 @@ double test_loss(struct tree *tree)
   for(i = tree->start - 1; i < tree->start + tree->length - 1; i++) {
     for(j = 0; j < tree->num_node[i]; j++) {
       curr_node = tree->node[i][j];
-      for(k = 0; k < curr_node->num_allele; k++)
-        if(curr_node->count_test_child[k] > 0)
+      for(k = 0; k < curr_node->num_allele; k++) {
+        if(curr_node->p_child[k] > 0)
           loss -= curr_node->count_test_child[k] * log(curr_node->p_child[k]);
+	else {
+	  loss -= curr_node->count_test_child[k] * log(1.0/(curr_node->count+1.0)); 
+	  //pen -= curr_node->count_test_child[k] * log(1.0/(curr_node->count+1000000.0));
+	}
+      }
     }
   }
+  
+  /*
+  outfile = fopen("bgl2.pen", "a");
+  fprintf(outfile, "%8.8lf %8.8lf\n", loss-pen, pen);
+  fclose(outfile);
+  */
 
   return loss;
 }
 
-double merge_test(struct tree *tree, struct tree_node *node1, struct tree_node *node2, double lambda, double min_diff, int first)
+double merge_test(struct tree_node *node1, struct tree_node *node2, double lambda, double diff, double min_diff)
 {
-  int i;
-  double diff = 0;
-
-  if(first) tree->loss_test = tree->loss;
+  int i, n;
+  double temp_diff;
+  // double diff = 0;
 
   if(node1 == node2) return min_diff;
 
@@ -823,21 +1114,34 @@ double merge_test(struct tree *tree, struct tree_node *node1, struct tree_node *
 
   for(i = 0; i < node1->num_allele; i++) {
     node1->p_child_test[i] = node2->p_child_test[i] = (node1->p_child[i]*node1->p_node + node2->p_child[i]*node2->p_node) / (node1->p_node + node2->p_node);
-    diff += (node1->count_child[i] + node2->count_child[i]) * log(node1->p_child_test[i]) - node1->count_child[i] * log(node1->p_child[i]) - node2->count_child[i] * log(node2->p_child[i]);
+    if(node1->p_child_test[i] > 0)
+      diff += (node1->count_child[i] + node2->count_child[i]) * log(node1->p_child_test[i]);
+    else
+      diff += (node1->count_child[i] + node2->count_child[i]) * log(1.0/(node1->count+node2->count+1.0));
+    if(node1->p_child[i] > 0)
+      diff -= node1->count_child[i] * log(node1->p_child[i]);
+    else
+      diff -= node1->count_child[i] * log(1.0/(node1->count+1.0));
+    if(node2->p_child[i] > 0)
+      diff -= node2->count_child[i] * log(node2->p_child[i]);
+    else
+      diff -= node2->count_child[i] * log(1.0/(node2->count+1.0));
   }
   diff += lambda * (node1->num_allele-1);
+  //diff += lambda * (num_node[node1->level]-1) * (node1->num_allele-1);
 
-  if(node1->level >= tree->start - 1 && node1->level < tree->start + tree->length)
-    tree->loss_test -= diff;
-
-  if(diff < min_diff) min_diff = diff;
+  if(diff < min_diff) 
+    min_diff = diff;
 
   for(i = 0; i < node1->num_allele; i++)
     if(!node1->allele_miss[i] && !node2->allele_miss[i]) {
-      diff = merge_test(tree, node1->child[i], node2->child[i], lambda, min_diff, 0);
-      if(diff < min_diff) min_diff = diff;
+      temp_diff = merge_test(node1->child[i], node2->child[i], lambda, diff, min_diff);
+      if(temp_diff < min_diff)
+	min_diff = temp_diff;
     }
- 
+
+  //num_node[node1->level]--;
+
   return min_diff;
 } 
 
@@ -862,8 +1166,8 @@ double merge_test(struct tree *tree, struct tree_node *node1, struct tree_node *
 
 struct tree_node *merge_node(struct tree *tree, struct tree_node *node1, struct tree_node *node2, double lambda, int first)
 {
-  int i, j, k;
-  double diff = 0;
+  int i, j, k, i_max = -1;
+  double diff = 0, p_max = 0;
   struct tree_node *curr_node, *new = malloc(sizeof(struct tree_node));
 
   if(node1->id == node2->id) return node1;
@@ -895,9 +1199,21 @@ struct tree_node *merge_node(struct tree *tree, struct tree_node *node1, struct 
     new->count_test_child[i] = node1->count_test_child[i] + node2->count_test_child[i];
     new->allele_miss[i] = node1->allele_miss[i] && node2->allele_miss[i];
     new->p_child[i] = new->p_child_test[i] = (node1->p_child[i]*node1->p_node + node2->p_child[i]*node2->p_node) / new->p_node;
-    diff += new->count_child[i] * log(new->p_child[i]) - node1->count_child[i] * log(node1->p_child[i]) - node2->count_child[i] * log(node2->p_child[i]);
+    if(new->p_child[i] > 0)
+      diff += new->count_child[i] * log(new->p_child[i]);
+    else
+      diff += new->count_child[i] * log(1.0/(new->count+1.0));
+    if(node1->p_child[i] > 0)
+      diff -= node1->count_child[i] * log(node1->p_child[i]);
+    else
+      diff -= node1->count_child[i] * log(1.0/(node1->count+1.0));
+    if(node2->p_child[i] > 0)
+      diff -= node2->count_child[i] * log(node2->p_child[i]);
+    else
+      diff -= node2->count_child[i] * log(1.0/(node2->count+1.0));
   }
   diff += lambda * (new->num_allele-1);
+  //diff += lambda * (tree->num_node[node1->level]-1) * (new->num_allele-1);
 
   if(node1->level >= tree->start - 1 && node1->level < tree->start + tree->length)
     tree->loss -= diff;
@@ -919,15 +1235,24 @@ struct tree_node *merge_node(struct tree *tree, struct tree_node *node1, struct 
     }
   }
 
+  for(i = 0; i < new->num_allele; i++)
+    if(new->p_child[i] > p_max) {
+      p_max = new->p_child[i];
+      i_max = i;
+    }
+  if(i_max >= 0)
+    for(i = 0; i < new->num_allele; i++)
+      if(new->allele_miss[i])
+	new->child[i] = new->child[i_max];
+
   // haplo merging?
 
   if(new->level > 0) {
     for(i = 0; i < tree->num_node[new->level-1]; i++) {
       curr_node = tree->node[new->level-1][i];
       for(j = 0; j < curr_node->num_allele; j++)
-        if(!curr_node->allele_miss[j])
-          if(curr_node->child[j]->id == node1->id || curr_node->child[j]->id == node2->id)
-            curr_node->child[j] = new;
+	if(curr_node->child[j]->id == node1->id || curr_node->child[j]->id == node2->id)
+	  curr_node->child[j] = new;
     }
   }
 
@@ -1034,6 +1359,70 @@ struct tree_node *merge_node(struct tree *tree, struct tree_node *node1, struct 
 
   return new;
 } */
+/*
+struct tree *merge_tree(struct tree *tree, double lambda, int start, int length, int reverse)
+{
+  int i, j, k, l, curr_label, num_node, *label;
+  double min_diff;
+  struct tree_node *curr_node1, *curr_node2, **node_list, ***node_ptr;
+
+  if(reverse) start = tree->num_level - start - length + 1;
+
+  tree->start = start;
+  tree->length = length;
+
+  loss(tree, lambda);
+
+  for(i = 0; i < tree->num_level; i++) {
+    printf("\t\t%d\n", i);
+    if(tree->num_node[i] > MAX_NODE) return NULL;
+
+    curr_label = 1;
+    label = calloc(tree->num_node[i], sizeof(int));
+    node_list = malloc(tree->num_node[i]*sizeof(struct tree_node*));
+    node_ptr = malloc(tree->num_node[i]*sizeof(struct tree_node**));
+
+    for(j = 0; j < tree->num_node[i]; j++) {
+      if(!label[j]) 
+	label[j] = curr_label++;
+      curr_node1 = tree->node[i][j];
+      node_list[j] = tree->node[i][j];
+      node_ptr[j] = &(node_list[j]);
+      for(k = j+1; k < tree->num_node[i]; k++) {
+        curr_node2 = tree->node[i][k];
+	min_diff = merge_test(tree, curr_node1, curr_node2, lambda, 0, lambda); // should be times max of num_allele-1
+	if(min_diff >= 0) {
+	  if(!label[k]) 
+	    label[k] = label[j];
+	  else
+	    for(l = 0; l < tree->num_node[i]; l++)
+	      if(label[l] == label[k]) 
+		label[l] = label[j];
+	}
+      }
+    }
+
+    //printf("Level: %d\n\tLabels:", i);
+    //for(j = 0; j < tree->num_node[i]; j++)
+    //  printf(" %d", label[j]);
+    //printf("\n");
+
+    num_node = tree->num_node[i];
+    for(j = 0; j < num_node; j++) {
+      for(k = j+1; k < num_node; k++)
+        if(label[j] == label[k]) {
+          *node_ptr[j] = merge_node(tree, *node_ptr[j], *node_ptr[k], lambda, 1);
+          node_ptr[k] = node_ptr[j];
+        }
+    }
+
+    free(node_list);
+    free(node_ptr);
+  }
+
+  return(tree);
+}
+*/
 
 struct tree *merge_tree(struct tree *tree, double lambda, int start, int length, int reverse)
 {
@@ -1048,23 +1437,22 @@ struct tree *merge_tree(struct tree *tree, double lambda, int start, int length,
   tree->length = length;
 
   loss(tree, lambda);
-
+  
   for(i = 0; i < tree->num_level; i++) {
-    //printf("%d\n", i);
+    //printf("\t\t%d\n", i);
     if(tree->num_node[i] > MAX_NODE) return NULL;
     do {
       max_diff = 0;
       merge = 0;
       //printf("curr_loss = %8.8lf\n", curr_loss);
-      for(j = 0; j < tree->num_node[i]; j++) {
+      for(j = 0; j < tree->num_node[i]-1; j++) {
         //printf("Checking (%d, %d)...\n", i, j+1);
         for(k = j+1; k < tree->num_node[i]; k++) {
           curr_node1 = tree->node[i][j];
           curr_node2 = tree->node[i][k];
-	  min_diff = merge_test(tree, curr_node1, curr_node2, lambda, lambda, 1); // should be times max of num_allele-1 
-          //printf("\twith (%d, %d): Curr = %8.8lf", i, k+1, curr_loss - new_loss);
-          //printf("\tnew_loss = %8.8lf\n", new_loss);
-          if(min_diff >= 0 && min_diff >= max_diff) {
+	  min_diff = merge_test(curr_node1, curr_node2, lambda, 0, lambda); // should be times max of num_allele-1 
+          //printf("\twith (%d, %d): min_diff = %8.8lf\n", i, k+1, min_diff);
+	  if(min_diff >= 0 && min_diff >= max_diff) {
             max_diff = min_diff;
 	    max_j = j;
 	    max_k = k;
@@ -1082,30 +1470,20 @@ struct tree *merge_tree(struct tree *tree, double lambda, int start, int length,
     } while(merge);
   }
 
-  /* add missing parallel edges */
-  for(i = 0; i < tree->num_level-1; i++)
-    for(j = 0; j < tree->num_node[i]; j++) {
-      curr_node1 = tree->node[i][j];
-      if(curr_node1->allele_miss[0])
-        add_edge(tree, curr_node1, curr_node1->child[1], 0, 0);
-      if(curr_node1->allele_miss[1])
-        add_edge(tree, curr_node1, curr_node1->child[0], 1, 0);
-    }
-
   // print size?
-  /*outfile = fopen("size", "a");
-  if(outfile == NULL) {
-    printf("Error: could not open file \"size\".\n");
-    return;
-  }
-  fprintf(outfile, "%8.2lf", lambda);
-  for(i = 0; i < tree->num_level; i++)
-    fprintf(outfile, " %d", tree->num_node[i]);
-  fprintf(outfile, "\n");
-  fclose(outfile);*/
+  //outfile = fopen("size", "a");
+  //if(outfile == NULL) {
+  //  printf("Error: could not open file \"size\".\n");
+  //  return;
+  //}
+  //fprintf(outfile, "%8.2lf", lambda);
+  //for(i = 0; i < tree->num_level; i++)
+  //  fprintf(outfile, " %d", tree->num_node[i]);
+  //fprintf(outfile, "\n");
+  //fclose(outfile); 
 
   return tree;
-}
+} 
 
 /* struct tree *merge_tree(struct tree *tree, double lambda)
 {
@@ -1364,34 +1742,17 @@ int calc_freq(struct haplotype ***results, struct tree* tree, int start, int len
     for(j = 0; j < tree->num_node[i]; j++) {
       curr_node = tree->node[i][j];
       for(k = 0; k < curr_node->num_allele; k++) {
-	if(curr_node->allele_miss[k]) {
-	  for(l = 0; l < tree->num_node[i+1]; l++) {
-	    tree->node[i+1][l]->haplo = realloc(tree->node[i+1][l]->haplo, (tree->node[i+1][l]->num_haplo+curr_node->num_haplo)*sizeof(struct haplotype*));
-	    for(m = 0; m < curr_node->num_haplo; m++) {
-	      index = tree->node[i+1][l]->num_haplo + m;
-	      tree->node[i+1][l]->haplo[index] = malloc(sizeof(struct haplotype));
-	      tree->node[i+1][l]->haplo[index]->length = curr_node->haplo[m]->length + 1;
-	      tree->node[i+1][l]->haplo[index]->allele = malloc(tree->node[i+1][l]->haplo[index]->length*sizeof(int));
-	      memcpy(tree->node[i+1][l]->haplo[index]->allele, curr_node->haplo[m]->allele, curr_node->haplo[m]->length*sizeof(int));
-	      tree->node[i+1][l]->haplo[index]->allele[curr_node->haplo[m]->length] = k+1;  /* allele fix */
-	      tree->node[i+1][l]->haplo[index]->freq = curr_node->haplo[m]->freq + log10(curr_node->p_child[k]) + log10(tree->node[i+1][l]->p_node);
-	    }
-	    tree->node[i+1][l]->num_haplo += curr_node->num_haplo;
-	  }
+	curr_node->child[k]->haplo = realloc(curr_node->child[k]->haplo, (curr_node->child[k]->num_haplo+curr_node->num_haplo)*sizeof(struct haplotype*));
+	for(l = 0; l < curr_node->num_haplo; l++) {
+	  index = curr_node->child[k]->num_haplo + l;
+	  curr_node->child[k]->haplo[index] = malloc(sizeof(struct haplotype));
+	  curr_node->child[k]->haplo[index]->length = curr_node->haplo[l]->length + 1;
+	  curr_node->child[k]->haplo[index]->allele = malloc(curr_node->child[k]->haplo[index]->length*sizeof(int));
+	  memcpy(curr_node->child[k]->haplo[index]->allele, curr_node->haplo[l]->allele, curr_node->haplo[l]->length*sizeof(int));
+	  curr_node->child[k]->haplo[index]->allele[curr_node->haplo[l]->length] = k+1;  /* allele fix */
+	  curr_node->child[k]->haplo[index]->freq = curr_node->haplo[l]->freq + log10(curr_node->p_child[k]);
 	}
-	else {
-	  curr_node->child[k]->haplo = realloc(curr_node->child[k]->haplo, (curr_node->child[k]->num_haplo+curr_node->num_haplo)*sizeof(struct haplotype*));
-	  for(l = 0; l < curr_node->num_haplo; l++) {
-	    index = curr_node->child[k]->num_haplo + l;
-	    curr_node->child[k]->haplo[index] = malloc(sizeof(struct haplotype));
-	    curr_node->child[k]->haplo[index]->length = curr_node->haplo[l]->length + 1;
-	    curr_node->child[k]->haplo[index]->allele = malloc(curr_node->child[k]->haplo[index]->length*sizeof(int));
-	    memcpy(curr_node->child[k]->haplo[index]->allele, curr_node->haplo[l]->allele, curr_node->haplo[l]->length*sizeof(int));
-	    curr_node->child[k]->haplo[index]->allele[curr_node->haplo[l]->length] = k+1;  /* allele fix */
-	    curr_node->child[k]->haplo[index]->freq = curr_node->haplo[l]->freq + log10(curr_node->p_child[k]);
-	  }
-	  curr_node->child[k]->num_haplo += curr_node->num_haplo;
-	} 
+	curr_node->child[k]->num_haplo += curr_node->num_haplo;
       }
     }
   /* free old haplos too */
