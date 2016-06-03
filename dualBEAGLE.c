@@ -282,7 +282,7 @@ struct tree *read_bgl(char *filename)
   }
 
   /* add missing parallel edges */
-  for(i = 0; i < tree->num_level; i++)
+  /*for(i = 0; i < tree->num_level; i++)
     for(j = 0; j < tree->num_node[i]; j++) {
       curr_node = tree->node[i][j];
       p_max = 0;
@@ -296,7 +296,7 @@ struct tree *read_bgl(char *filename)
         for(k = 0; k < curr_node->num_allele; k++)
           if(curr_node->allele_miss[k])
             add_edge(tree, curr_node, curr_node->child[k_max], k, 0);
-    }
+	    }*/
 
   return(tree);
 }
@@ -373,7 +373,7 @@ void split_input(char *filename, int num_split, int seed)
     printf("Error: Split size larger than sample size.\n");
     return;
   }
-
+  
   i = n = 0;
   selected = calloc(num_samp, sizeof(int));
   srand(seed);
@@ -538,7 +538,7 @@ void prep_boot(char *filename, struct tree *tree, int num_level, int start, int 
   for(i = 1; i < tree->num_level; i++) 
     for(j = 0; j < tree->num_node[i]; j++) 
       tree->node[i][j]->p_node = 0;
-
+  
   /* calculate edge and node weights */
   curr_p_sum = 1;
   for(i = 0; i < tree->num_level; i++) {
@@ -602,7 +602,7 @@ void free_tree(struct tree *tree)
   int i, j;
 
   if(tree == NULL) return;
-
+  
   for(i = 0; i < tree->num_level; i++) {
     for(j = 0; j < tree->num_node[i]; j++) free_node(tree->node[i][j]);
     free(tree->node[i]);
@@ -668,7 +668,8 @@ struct tree *copy_tree(struct tree *tree)
     for(j = 0; j < tree->num_node[i]; j++) {
       curr_node = new->node[i][j];
       for(k = 0; k < curr_node->num_allele; k++)
-	curr_node->child[k] = new->node[i+1][tree->node[i][j]->child[k]->id];
+        if(!curr_node->allele_miss[k])
+	  curr_node->child[k] = new->node[i+1][tree->node[i][j]->child[k]->id];
     }
 
   return(new);
@@ -976,21 +977,46 @@ void print_tree(char *filename, struct tree *tree, int reverse)
     return;
   }
 
-  //for(i = 0; i < tree->num_level; i++) {
-  for(i = tree->start - 1; i < tree->start + tree->length; i++) {
+  for(i = 0; i < tree->num_level; i++) {
+    //for(i = tree->start - 1; i < tree->start + tree->length; i++) {
     if(reverse) fprintf(outfile, "Level %d: %d\n", tree->num_level-i-1, tree->num_node[i]);
     else fprintf(outfile, "Level %d: %d\n", i, tree->num_node[i]);
     for(j = 0; j < tree->num_node[i]; j++) {
       curr_node = tree->node[i][j];
       fprintf(outfile, "\tNode ID = %d, Node Weight = %8.8lf, Node Count = %d, Test Count = %8.8lf\n", curr_node->id+1, curr_node->p_node, curr_node->count, curr_node->count_test);
       for(k = 0; k < curr_node->num_allele; k++) {
-	fprintf(outfile, "\t\tChild Node = %d, Child Allele = %d, Child Weight = %8.8lf, Child Count = %d. Test Count = %8.8lf\n", curr_node->child[k]->id+1, k+1, curr_node->p_child[k], curr_node->count_child[k], curr_node->count_test_child[k]);
+	if(curr_node->allele_miss[k])
+	  fprintf(outfile, "\t\tChild Node = %d, Child Allele = %d, Child Weight = %8.8lf, Child Count = %d. Test Count = %8.8lf\n", 0, k+1, curr_node->p_child[k], curr_node->count_child[k], curr_node->count_test_child[k]);
+	else
+	  fprintf(outfile, "\t\tChild Node = %d, Child Allele = %d, Child Weight = %8.8lf, Child Count = %d. Test Count = %8.8lf\n", curr_node->child[k]->id+1, k+1, curr_node->p_child[k], curr_node->count_child[k], curr_node->count_test_child[k]);
       }
     }
   }
 
   fclose(outfile);
 }
+
+double loglik(struct tree *tree)
+{
+  int i, j, k;
+  double loglik = 0;
+  struct tree_node *curr_node;
+  
+  for(i = 0; i < tree->num_level; i++) {
+    for(j = 0; j < tree->num_node[i]; j++) {
+      curr_node = tree->node[i][j];
+      for(k = 0; k < curr_node->num_allele; k++) {
+	if(curr_node->p_child[k] > 0)
+	  loglik += curr_node->count_child[k] * log(curr_node->p_child[k]);
+	else
+	  loglik += curr_node->count_child[k] * log(1.0/(curr_node->count+1.0));
+      }
+    }
+  }
+  
+  return loglik;
+}
+
 
 double loss(struct tree *tree, double lambda)
 {
@@ -1610,12 +1636,23 @@ void print_view(char *filename, struct tree *tree)
   free(node_list);
 }
 
-void calc_tree(struct tree *tree1, struct tree *tree2)
+void calc_tree(struct tree *tree1, struct tree *tree2, int print)
 {
   int i, j, k, curr_level, curr_id, back_level, back_id;
-  double child_sum, node_sum, back_mult;
+  double child_sum, back_sum, back_mult, p_sum, *p_allele, **p_mean;
   struct tree_node *curr_node, *back_node;
   // struct queue *queue;
+
+  // Move later!!
+  p_mean = malloc(tree1->num_level*sizeof(double*));
+  for(i = 0; i < tree1->num_level; i++) {
+    p_mean[i] = calloc(tree1->num_allele[i], sizeof(double));
+    for(j = 0; j < tree1->num_node[i]; j++) {
+      curr_node = tree1->node[i][j];
+      for(k = 0; k < curr_node->num_allele; k++)
+	p_mean[i][k] += (double)curr_node->count_child[k] / (double)tree1->node[0][0]->count;
+    }
+  }
 
   // queue = new_queue();
   curr_node = tree1->node[0][0];
@@ -1628,15 +1665,13 @@ void calc_tree(struct tree *tree1, struct tree *tree2)
 
   for(curr_level = 0; curr_level < tree1->num_level; curr_level++) {
     back_level = tree2->num_level - curr_level - 2;
-    node_sum = 0;
-    for(curr_id = 0; curr_id < tree1->num_node[curr_level]; curr_id++) 
-      node_sum += tree1->node[curr_level][curr_id]->p_node;
     for(curr_id = 0; curr_id < tree1->num_node[curr_level]; curr_id++) {
-      // if(curr_level == 5 && curr_id == 0) printf("Level: %d, ID: %d\n", curr_level, curr_id+1);
+      if(print && curr_level >= 0) printf("Level: %d, ID: %d\n", curr_level, curr_id+1);
       curr_node = tree1->node[curr_level][curr_id];
-      curr_node->p_node /= node_sum;
       curr_node->marked = 0;
       child_sum = 0;
+      p_allele = calloc(curr_node->num_allele, sizeof(double));
+      p_sum = back_sum = 0;
       for(i = 0; i < curr_node->num_allele; i++) {
 	if(!curr_node->allele_miss[i] && !curr_node->child[i]->marked) {
 	  curr_node->child[i]->marked = 1;
@@ -1651,31 +1686,64 @@ void calc_tree(struct tree *tree1, struct tree *tree2)
 	      curr_node->child[i]->back_weight[j] = 0;
 	}
 	curr_node->p_child[i] = 0;
-	// if(curr_level == 5 && curr_id == 0) printf("\tAllele %d = ", i+1);
+	if(print && curr_level >= 0) printf("\tAllele %d = ", i+1);
 	for(j = 0; j < tree2->num_node[back_level]; j++) {
 	  back_node = tree2->node[back_level][j];
 	  if(back_node->allele_miss[i]) {
 	    back_mult = 0;
-	    for(k = 0; k < tree2->num_node[back_level+1]; k++)
-	      back_mult += curr_node->back_weight[k] * tree2->node[back_level+1][k]->p_node;
+	    p_allele[i] -= back_node->p_child[i] * back_node->p_node;
+	    //back_mult = curr_node->p_node;
 	  }
 	  else back_mult = curr_node->back_weight[back_node->child[i]->id];
-	  curr_node->p_child[i] += back_mult * back_node->p_child[i] * back_node->p_node / curr_node->p_node;
-	  // if(curr_level == 5 && curr_id == 0) { printf("%4.4lf * %4.4lf * %4.4lf / %4.4lf", back_mult, back_node->p_child[i], back_node->p_node, curr_node->p_node); 
-	  // if(j < tree2->num_node[back_level]-1) printf("\n\t         + ");
-	  // else printf(" = %4.4lf\n", curr_node->p_child[i]); }
+	  if(curr_node->p_node > 0) {
+	    p_allele[i] += back_node->p_child[i] * back_node->p_node;
+	    back_sum += back_mult * back_node->p_child[i] * back_node->p_node;
+	    curr_node->p_child[i] += back_mult * back_node->p_child[i] * back_node->p_node / curr_node->p_node;
+	    if(print && curr_level >= 0) printf("%4.4lf * %4.4lf * %4.4lf / %4.4lf", back_mult, back_node->p_child[i], back_node->p_node, curr_node->p_node); 
+	  }
+	  else if(print && curr_level >= 0) printf("0");
+	  if(print && curr_level >= 0) printf("\n\t         + ");
+	  if(print && curr_level >= 0 && j == tree2->num_node[back_level]-1) printf(" = %4.4lf\n", curr_node->p_child[i]);
 	  if(!curr_node->allele_miss[i])
 	    curr_node->child[i]->back_weight[back_node->id] += back_mult * back_node->p_child[i];
 	}
-	child_sum += curr_node->p_child[i];
+	p_sum += p_allele[i];
       }
+      if(print && curr_level >= 0) printf("\tp_sum = %4.4lf, back_sum = %4.4lf, p_node = %4.4lf\n", p_sum, back_sum, curr_node->p_node);
+      if(fabs(1-p_sum) > TOL)
+	back_mult = (curr_node->p_node - back_sum) / (1 - p_sum);
+      else
+	back_mult = 0;
       for(i = 0; i < curr_node->num_allele; i++) {
-	curr_node->p_child[i] /= child_sum;
-	if(!curr_node->allele_miss[i])
+        for(j = 0; j < tree2->num_node[back_level]; j++) {
+          back_node = tree2->node[back_level][j];
+          if(back_node->allele_miss[i])
+	    if(!curr_node->allele_miss[i])
+	      curr_node->child[i]->back_weight[back_node->id] += back_mult * back_node->p_child[i];
+	}
+        curr_node->p_child[i] += back_mult * (p_mean[curr_level][i] - p_allele[i]) / curr_node->p_node;
+	if(print && curr_level >= 0) printf("\tAllele %d += ", i+1);
+        if(print && curr_level >= 0) printf("%4.4lf * (%4.4lf - %4.4lf) / %4.4lf", back_mult, p_mean[curr_level][i], p_allele[i], curr_node->p_node);
+        if(print && curr_level >= 0) printf(" = %4.4lf\n", curr_node->p_child[i]);
+	child_sum += curr_node->p_child[i];
+        //printf("\tchild_sum += %8.8lf\n", curr_node->p_child[i]);
+      }
+      free(p_allele);
+      //printf("\tchild_sum = %8.8lf\n", child_sum);
+      for(i = 0; i < curr_node->num_allele; i++) {
+	if(child_sum > 0)
+	  curr_node->p_child[i] /= child_sum;
+	if(!curr_node->allele_miss[i]) {
+	  //printf("\tAllele %d = , Node ID = %d, p_node += %8.8lf\n", i+1, curr_node->child[i]->id+1, curr_node->p_node * curr_node->p_child[i]);
 	  curr_node->child[i]->p_node += curr_node->p_node * curr_node->p_child[i];
+	}
       }
     }
   }      
+
+  for(i = 0; i < tree1->num_level; i++)
+    free(p_mean[i]);
+  free(p_mean);
   
   /*
   while(!empty(queue)) {
@@ -1742,17 +1810,19 @@ int calc_freq(struct haplotype ***results, struct tree* tree, int start, int len
     for(j = 0; j < tree->num_node[i]; j++) {
       curr_node = tree->node[i][j];
       for(k = 0; k < curr_node->num_allele; k++) {
-	curr_node->child[k]->haplo = realloc(curr_node->child[k]->haplo, (curr_node->child[k]->num_haplo+curr_node->num_haplo)*sizeof(struct haplotype*));
-	for(l = 0; l < curr_node->num_haplo; l++) {
-	  index = curr_node->child[k]->num_haplo + l;
-	  curr_node->child[k]->haplo[index] = malloc(sizeof(struct haplotype));
-	  curr_node->child[k]->haplo[index]->length = curr_node->haplo[l]->length + 1;
-	  curr_node->child[k]->haplo[index]->allele = malloc(curr_node->child[k]->haplo[index]->length*sizeof(int));
-	  memcpy(curr_node->child[k]->haplo[index]->allele, curr_node->haplo[l]->allele, curr_node->haplo[l]->length*sizeof(int));
-	  curr_node->child[k]->haplo[index]->allele[curr_node->haplo[l]->length] = k+1;  /* allele fix */
-	  curr_node->child[k]->haplo[index]->freq = curr_node->haplo[l]->freq + log10(curr_node->p_child[k]);
+	if(!curr_node->allele_miss[k]) { // remove?
+	  curr_node->child[k]->haplo = realloc(curr_node->child[k]->haplo, (curr_node->child[k]->num_haplo+curr_node->num_haplo)*sizeof(struct haplotype*));
+	  for(l = 0; l < curr_node->num_haplo; l++) {
+	    index = curr_node->child[k]->num_haplo + l;
+	    curr_node->child[k]->haplo[index] = malloc(sizeof(struct haplotype));
+	    curr_node->child[k]->haplo[index]->length = curr_node->haplo[l]->length + 1;
+	    curr_node->child[k]->haplo[index]->allele = malloc(curr_node->child[k]->haplo[index]->length*sizeof(int));
+	    memcpy(curr_node->child[k]->haplo[index]->allele, curr_node->haplo[l]->allele, curr_node->haplo[l]->length*sizeof(int));
+	    curr_node->child[k]->haplo[index]->allele[curr_node->haplo[l]->length] = k+1;  /* allele fix */
+	    curr_node->child[k]->haplo[index]->freq = curr_node->haplo[l]->freq + log10(curr_node->p_child[k]);
+	  }
+	  curr_node->child[k]->num_haplo += curr_node->num_haplo;
 	}
-	curr_node->child[k]->num_haplo += curr_node->num_haplo;
       }
     }
   /* free old haplos too */

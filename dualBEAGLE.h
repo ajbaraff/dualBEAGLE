@@ -50,6 +50,7 @@ void calc_test(struct tree*, struct tree*);
 void read_test(char*, struct tree*, int, int, int, int);
 void prep_boot(char*, struct tree*, int, int, int, int);
 void print_tree(char*, struct tree*, int);
+double loglik(struct tree*);
 double loss(struct tree*, double);
 double aic(struct tree*);
 double bic(struct tree*);
@@ -58,7 +59,7 @@ double merge_test(struct tree_node*, struct tree_node*, double, double, double);
 struct tree_node *merge_node(struct tree*, struct tree_node*, struct tree_node*, double, int);
 struct tree *merge_tree(struct tree*, double, int, int, int);
 void print_view(char*, struct tree*);
-void calc_tree(struct tree*, struct tree*);
+void calc_tree(struct tree*, struct tree*, int);
 void print_haplo(char*, struct haplotype**, int);
 
 void prep_tree(struct tree*, struct tree*);
