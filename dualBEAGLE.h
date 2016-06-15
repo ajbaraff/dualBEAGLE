@@ -9,7 +9,7 @@
 #define MAX_LINE 65536
 #define MAX_ENTRY 64
 #define START_SIZE 16
-#define TOL 0.00001
+#define TOL 0.0001
 #define OFFSET 0.0000
 #define MAX_NODE 250
 
