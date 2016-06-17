@@ -60,6 +60,9 @@ struct tree_node *merge_node(struct tree*, struct tree_node*, struct tree_node*,
 struct tree *merge_tree(struct tree*, double, int, int, int);
 void print_view(char*, struct tree*);
 void calc_tree(struct tree*, struct tree*, int);
+void add_null(struct tree*);
+void del_null(struct tree*);
+void recon_tree(struct tree*, struct tree*);
 void print_haplo(char*, struct haplotype**, int);
 
 void prep_tree(struct tree*, struct tree*);
