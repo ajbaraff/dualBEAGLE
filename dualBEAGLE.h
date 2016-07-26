@@ -21,12 +21,18 @@ struct haplotype
 
 struct tree_node
 {
-  int level, id, count, num_allele, num_back, num_haplo, marked, *count_child, *allele_miss;
+  int level, id, count, num_allele, num_parent, num_back, num_haplo, marked, *count_child, *allele_miss;
   double p_node, count_test, *p_child, *p_child_test, *count_test_child, *back_weight;
   struct haplotype **haplo;
-  struct tree_node **child;
+  struct tree_edge **child, **parent;
 };
 
+struct tree_edge
+{
+  int parent_id;
+  struct tree_node *node_to;
+}
+ 
 struct tree
 {
   struct tree_node ***node;
